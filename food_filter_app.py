@@ -31,26 +31,31 @@ BRAND_OWNERS = {
     "pepsico": {
         "label": "PepsiCo",
         "logo": "pepsico.svg",
+        "total": 7562,
         "patterns": ("%pepsico%", "pepsi-cola north america inc.", "pepsi lipton"),
     },
     "tyson": {
         "label": "Tyson Foods",
         "logo": "tyson.svg",
+        "total": 11955,
         "patterns": ("%tyson foods%", "tyson", "tyson tastemakers"),
     },
     "kraft_heinz": {
         "label": "Kraft Heinz",
         "logo": "kraft-heinz.svg",
+        "total": 12467,
         "patterns": ("%kraft heinz%", "kraft foods inc.", "kraft foods global, inc."),
     },
     "general_mills": {
         "label": "General Mills",
         "logo": "general-mills.svg",
+        "total": 40744,
         "patterns": ("general mills%",),
     },
     "mars": {
         "label": "Mars Inc.",
         "logo": "mars.svg",
+        "total": 8556,
         "patterns": ("mars, inc.", "mars chocolate north america llc", "mars retail group inc."),
     },
 }
@@ -364,7 +369,6 @@ init();
 
 class AppHandler(BaseHTTPRequestHandler):
     db_path: Path
-    brand_owner_totals: dict[str, int] | None = None
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -423,33 +427,11 @@ class AppHandler(BaseHTTPRequestHandler):
                         "SELECT category_key,label,total FROM category_totals ORDER BY rowid"
                     )
                 }
-                owner_totals = type(self).brand_owner_totals
-                if owner_totals is None:
-                    owner_expressions = []
-                    owner_params = []
-                    for owner in BRAND_OWNERS.values():
-                        patterns = owner["patterns"]
-                        predicate = " OR ".join(
-                            "lower(trim(COALESCE(brand_owner,''))) LIKE ?" for _ in patterns
-                        )
-                        owner_expressions.append(
-                            f"COALESCE(SUM(CASE WHEN ({predicate}) THEN 1 ELSE 0 END),0)"
-                        )
-                        owner_params.extend(patterns)
-                    owner_counts = conn.execute(
-                        "SELECT " + ",".join(owner_expressions) + " FROM product_metrics",
-                        owner_params,
-                    ).fetchone()
-                    owner_totals = {
-                        key: int(owner_counts[index] or 0)
-                        for index, key in enumerate(BRAND_OWNERS)
-                    }
-                    type(self).brand_owner_totals = owner_totals
                 owners = {
                     key: {
                         "label": owner["label"],
                         "logo": owner["logo"],
-                        "total": owner_totals[key],
+                        "total": owner["total"],
                     }
                     for key, owner in BRAND_OWNERS.items()
                 }
@@ -516,22 +498,11 @@ class AppHandler(BaseHTTPRequestHandler):
                         "total": category_total,
                         "share": (100.0 * category_matching / category_total) if category_total else 0.0,
                     }
-                base_owner_totals = type(self).brand_owner_totals
-                if base_owner_totals is None:
-                    base_owner_counts = conn.execute(
-                        "SELECT " + ",".join(owner_clauses) + " FROM product_metrics",
-                        owner_params,
-                    ).fetchone()
-                    base_owner_totals = {
-                        key: int(base_owner_counts[offset] or 0)
-                        for offset, key in enumerate(BRAND_OWNERS)
-                    }
-                    type(self).brand_owner_totals = base_owner_totals
                 owners = {}
                 first_owner_index = 1 + len(FILTER_CATEGORIES)
                 for offset, (key, owner) in enumerate(BRAND_OWNERS.items()):
                     owner_matching = int(result[first_owner_index + offset] or 0)
-                    owner_total = base_owner_totals[key]
+                    owner_total = owner["total"]
                     owners[key] = {
                         "matching": owner_matching,
                         "total": owner_total,
